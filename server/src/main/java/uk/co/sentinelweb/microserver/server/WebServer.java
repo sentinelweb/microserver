@@ -5,9 +5,7 @@ import org.apache.commons.io.input.ReaderInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -26,9 +24,6 @@ import java.util.Date;
 import java.util.HashMap;
 
 import uk.co.sentinelweb.microserver.server.cp.CommandProcessor;
-import uk.co.sentinelweb.microserver.server.cp.PingCommandProcessor;
-import uk.co.sentinelweb.microserver.server.cp.ProxyCommandProcessor;
-import uk.co.sentinelweb.microserver.server.cp.StreamCommandProcessor;
 
 /**
  * see not at bottom for tip on how to use https
@@ -38,47 +33,31 @@ import uk.co.sentinelweb.microserver.server.cp.StreamCommandProcessor;
 public class WebServer extends Thread implements InterruptibleChannel {
     ServerSocket serverSocket;
     public boolean doRun = true;
-    int port = C.SERVERPORT_DEF;
+    final int port;
     SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss");
     public ArrayList<RequestProcessor> requestThreads = new ArrayList<>();
-    public ArrayList<RequestProcessor> waitingRequests = new ArrayList<>();
+
     boolean serverRunning = false;
-    public WebServer(final int port) {
+
+    final WebServerConfig config;
+
+    FileUtils _fileUtils = new FileUtils();
+
+    public WebServer(final WebServerConfig config) {
         super();
-        setName("Webserver");
-        //wvu = new WebViewUtil(act);
-        this.port = port;
-        setPriority(C.WEB_SVR_PRIORITY);
-        try {
-//            new EpisodeCommandProcessor(act);
-//            new ToolsCommandProcessor(act);
-            new PingCommandProcessor();
-//            new PodcastCommandProcessor(act);
-//            new PlayerCommandProcessor(act);
-            new StreamCommandProcessor();
-//            new DashBoardCommandProcessor(act);
-            new ProxyCommandProcessor();
-//            new DeviceCommandProcessor(act);
-//            new UpdateCommandProcessor(act);
-//            new EpisodeJSONCommandProcessor(act);
-//            new DownloadCommandProcessor(act);
-//            new ImportCommandProcessor(act);
-//            new HPROFCommandProcessor(act);
-        } catch (final Exception e) {
-            System.err.println(e.getMessage());
-        }
+        this.config = config;
+        setName(config.getName());
+        this.port = config.getPort();
+        setPriority(config.getPriority());
     }
 
     public void run() {
         try {
             System.out.println("TCPServer: start");
-            // dont sseem to be abe to coonect when this is enabled must be more to it,
-//              ServerSocketFactory sslf = SSLServerSocketFactory.getDefault();
-//              serverSocket = sslf.createServerSocket(this.port);
             serverSocket = new ServerSocket(this.port);
             while (doRun) {
                 serverRunning = true;
-                System.out.println( "TCPServer: running:"+serverSocket.getInetAddress().toString()+":"+serverSocket.getLocalPort()+":"+serverSocket.getLocalSocketAddress().toString());
+                System.out.println("TCPServer: running:" + serverSocket.getInetAddress().toString() + ":" + serverSocket.getLocalPort() + ":" + serverSocket.getLocalSocketAddress().toString());
                 final Socket client = serverSocket.accept();
                 try {
                     final RequestProcessor rp = new RequestProcessor(client);
@@ -97,42 +76,6 @@ public class WebServer extends Thread implements InterruptibleChannel {
         serverRunning = false;
     }
 
-    private void writeHeaders(final BufferedWriter out, final String type, final int cacheSec) throws IOException {
-        final StringWriter sw = new StringWriter();
-        sw.write("HTTP/1.1 200 OK" + "\r\n");
-        sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");
-        sw.write("Server: MyPOD Android" + "\r\n");
-        sw.write("Last-Modified: " + sdf.format(new Date()) + " GMT\r\n");
-        sw.write("Keep-Alive: timeout=15, max=100" + "\r\n");
-        sw.write("Connection: Keep-Alive" + "\r\n");
-        sw.write("Content-Type:" + type + "\r\n");
-        if (cacheSec == -1) {
-            sw.write("Expires: -1" + "\r\n");
-            sw.write("Cache-Control: private, max-age=0" + "\r\n");
-        } else {
-            sw.write("Expires: " + sdf.format(new Date(System.currentTimeMillis() - cacheSec * 1000)) + " GMT\r\n");
-            sw.write("Cache-Control: private, max-age=" + cacheSec + "\r\n");
-        }
-        sw.write("\r\n");
-
-        out.write(sw.toString());
-        //Log.d(Globals.TAG,sw.toString());
-        out.flush();
-    }
-
-    public static void sendForward(final OutputStream out, final String path) throws IOException {
-        final SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss");//"Tue, 16 Feb 2010 22:01:40 GMT"
-        final StringWriter sw = new StringWriter();
-        sw.write("HTTP/1.1 302 Found" + "\r\n");
-        sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");
-        sw.write("Server: MyPOD Android" + "\r\n");
-        sw.write("Location: " + path + "\r\n");
-        sw.write("Content-Type:" + MimeMap.get(path).mimeType + "\r\n");
-        sw.write("\r\n");
-        out.write(sw.toString().getBytes());
-        out.flush();
-    }
-
     /*
      * (non-Javadoc)
      * @see java.nio.channels.InterruptibleChannel#close()
@@ -141,12 +84,22 @@ public class WebServer extends Thread implements InterruptibleChannel {
     public void close() throws IOException {
         for (final RequestProcessor rp : requestThreads) {
             try {
+                rp.cancel();
+            } catch (final Exception e) {
+                e.printStackTrace();
+            }
+            try {
                 rp.interrupt();
             } catch (final Exception e) {
                 e.printStackTrace();
             }
         }
+
+        for (final CommandProcessor cp : config.getCommandProcessorMap().values()) {
+            cp.release();
+        }
         serverSocket.close();
+        doRun = false;
     }
 
     @Override
@@ -159,7 +112,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
         public boolean cancelled = false;
         private CommandProcessor currentCommand = null;
 
-        public RequestProcessor( final Socket client) {
+        public RequestProcessor(final Socket client) {
             super();
             this.client = client;
             setName("RequestProcessor:" + requestThreads.size());
@@ -175,134 +128,25 @@ public class WebServer extends Thread implements InterruptibleChannel {
                 in = new BufferedReader(new InputStreamReader(client.getInputStream()), 8 * 1024);
                 outputStream = client.getOutputStream();
                 outWriter = new BufferedWriter(new OutputStreamWriter(outputStream), 8 * 1024);// may not be used
-                String str = null;
-                boolean headersProcessed = false;
                 //Parsing headers, path method string
                 final RequestData req = new RequestData();
                 final SocketAddress addr = client.getRemoteSocketAddress();
 
-                while (!headersProcessed) {//.indexOf("Connection:")==-1
-                    str = in.readLine();
-                    //Log.d(Globals.TAG, "S: Request: '" + str + "'");
-                    if (str != null && str.indexOf("GET ") != -1) {
-                        req.setMethod("GET");
-                        req.setPath(str.substring("GET ".length(), str.length() - " HTTP/1.1".length()));
-                    } else if (str != null && str.indexOf("POST ") != -1) {
-                        req.setMethod("POST");
-                        req.setPath(str.substring("POST ".length(), str.length() - " HTTP/1.1".length()));
-                        //post=true;
-                    } else if (str != null && str.indexOf("HEAD ") != -1) {
-                        req.setMethod("HEAD");
-                        req.setPath(str.substring("HEAD ".length(), str.length() - " HTTP/1.1".length()));
-                    } else if (str != null) {
-                        final String[] header = str.split(":");
-                        if (header.length == 2) {
-                            if (header[0].trim().toLowerCase().equals("cookie")) {
-                                final HashMap<String, String> cookie = new HashMap<>();
-                                final String[] cookieDataSplit = header[1].split(";");
-                                for (final String cookieData : cookieDataSplit) {
-                                    final String[] valSplit = cookieData.split(":");
-                                    if (valSplit.length > 1) {
-                                        cookie.put(valSplit[0], valSplit[1]);
-                                    }
-                                }
-                            } else {
-                                req.getHeaders().put(header[0].trim().toLowerCase(), header[1].trim());
-                                //DebugLog.log(DebugLog.wsLog,TCPServer.class.getCanonicalName() ,"S: Received Header: '" + header[0].trim().toLowerCase()+" = "+header[1].trim() + "'");
-                            }
-                        }
-                    }
-                    if ("".equals(str) || str == null) {
-                        headersProcessed = true;
-                    }
-                    ////Log.d(Globals.TAG, "S: Received: '" + str + "'");
-                }
-
+                processHeaders(in, req);
 
                 System.out.println(new StringBuffer("S: path: '").append(req.getPath()).append("'").toString());
                 if (req.getBasePath() != null && !"".equals(req.getBasePath())) {
                     try {
-                        if (req.getPath().toLowerCase().endsWith("favicon.ico")) {
-                            req.setPath(C.FAVICON);
-                        }
+//                        if (req.getPath().toLowerCase().endsWith("favicon.ico")) {
+//                            req.setPath(C.FAVICON);
+//                        }
                         // parsing GET garameters
-                        if (req.getPath().indexOf("?") > -1) {
-                            final String queryString = req.getPath().substring(req.getPath().indexOf("?") + 1);
-                            //Log.e("TCP","command : queryString="+queryString);
-                            final String[] params = queryString.split("&");
-                            ////Log.e("TCP","params="+params.length);
-
-                            for (final String pair : params) {
-                                ////Log.e("TCP","pair="+pair);
-                                final String[] paramSplit = pair.split("=");
-                                if (paramSplit.length > 1) {
-                                    req.getParams().put(paramSplit[0], URLDecoder.decode(paramSplit[1]));
-                                }
-                            }
-                        }
-                        String command = req.getParams().get("command");
-                        if (command != null || req.getBasePath().startsWith("/c/")) {
-                            // parsing POS parameters
-                            final String contType = req.getHeaders().get("content-type");
-                            req.setContentType(contType);
-                            boolean isFormData = false;
-                            if (contType != null) {
-                                isFormData = contType.indexOf("multipart/form-data") == 0;
-                            }
-                            final String contLen = req.getHeaders().get("content-length");
-                            int len = 0;
-                            try {
-                                len = Integer.parseInt(contLen);
-                            } catch (final Exception e1) {
-                            }
-                            req.setContentLength(len);
-                            final StringBuffer postRequest = new StringBuffer();
-
-                            ////Log.d("TCP", "S: Content: '" + contLen + ":"+ post +"'");
-                            if (!isFormData) {
-                                if (contLen != null && req.isPost()) {
-                                    //int len = Integer.parseInt(contLen);
-                                    final char[] buf = new char[1000];
-                                    int block = 0;
-                                    while (len > 0) {//len>0
-                                        try {
-                                            if (!in.ready()) {
-                                                break;
-                                            }
-                                            block = in.read(buf, 0, len > 1000 ? 1000 : len);
-                                            str = new String(buf, 0, block);
-                                            postRequest.append(str);
-                                            len -= block;
-                                        } catch (final Exception e) {
-                                            System.err.println("POST Exception :::: " + postRequest.toString());
-                                            e.printStackTrace(System.err);
-                                        }
-                                    }
-                                    final String postParams = postRequest.toString();
-                                    //Log.d(Globals.TAG,"POST :::: "+postParams);
-                                    if (!postParams.startsWith("{") && !postParams.startsWith("[")) {// crude test for JSON posting - how can i do it better?
-                                        final String[] params = postParams.split("&");
-                                        for (final String pair : params) {
-                                            final String[] paramSplit = pair.split("=");
-                                            req.getParams().put(paramSplit[0].toLowerCase(), URLDecoder.decode(paramSplit[1]));
-                                        }
-                                    } else {
-                                        req.setPostData(postParams);
-                                    }
-                                }
-                            } else {
-                                // next ttest for boundary : "boundary=----WebKitFormBoundaryFgZcxCfWUB2BdVQl"
-                                // ignoring for now
-
-                            }
-                            final String outputType = "text/html; charset=utf-8";
-                            if (req.getBasePath().startsWith("/c/")) {
-                                final String[] pathSplit = req.getBasePath().split("/");
-                                if (pathSplit.length > 2) {
-                                    command = pathSplit[2];
-                                }
-                            }
-                            CommandProcessor c = CommandProcessor.getCommandProcessor(command);
+                        processGetParams(req);
+                        // parsing POST parameters
+                        processPostParameters(in, req);
+                        final String outputType = "text/html; charset=utf-8";
+                        CommandProcessor c = getCommandProcessor(req);
+                        if (c != null) {
                             if (!c.singleton) {
                                 final Constructor<CommandProcessor> cons = (Constructor<CommandProcessor>) c.getClass().getConstructor();
                                 c = cons.newInstance();
@@ -311,50 +155,183 @@ public class WebServer extends Thread implements InterruptibleChannel {
                             c.setInputStream(new ReaderInputStream(in, Charset.defaultCharset()));
                             c.setOutputStream(outputStream);
                             c.setRequest(this);
-                            if (c != null) {
-                                try {
-                                    if (!c.handleHeaders) {
-                                        writeHeaders(outWriter, outputType, -1);
-                                    }
-                                    final String processCommand = c.processCommand(req);
-                                    if (processCommand != null) {
-                                        outWriter.write(processCommand);
-                                    } else {
-                                        outWriter.write("");
-                                    }
-                                    //DebugLog.log(DebugLog.wsLog,TCPServer.class.getCanonicalName(), "Output of cmd::"+processCommand.toString());
-                                } catch (final SocketException e) {
-                                    System.err.println( "SocketException:" + e.getMessage());
-                                    e.printStackTrace(System.err);
+
+                            try {
+                                if (!c.handleHeaders) {
+                                    writeHeaders(outWriter, outputType, -1);
                                 }
-                            } else {
-                                outWriter.write("({\"error\":\"Command not found\"})");
+                                final String processCommand = c.processCommand(req);
+                                if (processCommand != null) {
+                                    outWriter.write(processCommand);
+                                } else {
+                                    outWriter.write("");
+                                }
+                                //DebugLog.log(DebugLog.wsLog,TCPServer.class.getCanonicalName(), "Output of cmd::"+processCommand.toString());
+                            } catch (final SocketException e) {
+                                System.err.println("SocketException:" + e.getMessage());
+                                e.printStackTrace(System.err);
                             }
                             if (!c.singleton) {
                                 c.release();
                             }
                             currentCommand = null;
-                            outWriter.flush();
+                        } else if (config.getWebRoot() != null) {
+                            final File f = new File(config.getWebRoot(), req.getPath());
+                            if (_fileUtils.checkParent(config.getWebRoot(), f) && f.exists()) {
+                                writeHeaders(outWriter, MimeMap.getExt(req.getPath()), config.getCacheTimeSecs());
+                                outWriter.flush();
+                                _fileUtils.writeFile(f, outputStream);
+                            } else {
+                                write404(outWriter, req.getPath());
+                            }
                         } else {
-                            outWriter.write("({\"error\":\"not handled\"})");
+                            outWriter.write("({\"error\":\"Command not found\"})");
                         }
+
+                        outWriter.flush();
                     } catch (final Exception e) {
-                        System.err.println( "S: Error:" + req.getPath());
+                        System.err.println("S: Error:" + req.getPath());
                         e.printStackTrace(System.err);
                     }
                 }/*  req.getPath()!=null  */
             } catch (final Exception e) {
-                System.err.println( "S: Error: "+e.getMessage());
+                System.err.println("S: Error: " + e.getMessage());
                 e.printStackTrace(System.err);
             } finally {
                 try {
                     client.close();
                 } catch (final Exception e) {
-                    System.err.println( "S: Exception closing client:" );
+                    System.err.println("S: Exception closing client:");
                     e.printStackTrace(System.err);
                 }
             }
             requestThreads.remove(this);
+        }
+
+        private CommandProcessor getCommandProcessor(final RequestData req) {
+            int maxSize = -1;
+            CommandProcessor found = null;
+            for (final String commandPath : config.getCommandProcessorMap().keySet()) {
+                if (req.getPath().startsWith(commandPath) && commandPath.length() > maxSize) {
+                    maxSize = commandPath.length();
+                    found = config.getCommandProcessorMap().get(commandPath);
+                }
+            }
+            return found;
+        }
+
+        private void processPostParameters(final BufferedReader in, final RequestData req) {
+            String str;
+            final String contType = req.getHeaders().get("content-type");
+            req.setContentType(contType);
+            boolean isFormData = false;
+            if (contType != null) {
+                isFormData = contType.indexOf("multipart/form-data") == 0;
+            }
+            final String contentLengthString = req.getHeaders().get("content-length");
+            int contentLength = 0;
+            try {
+                contentLength = Integer.parseInt(contentLengthString);
+            } catch (final Exception e1) {
+
+            }
+            req.setContentLength(contentLength);
+            final StringBuilder postRequest = new StringBuilder();
+
+            ////Log.d("TCP", "S: Content: '" + contentLengthString + ":"+ post +"'");
+            if (!isFormData) {
+                if (contentLength > 0 && req.isPost()) {
+                    final char[] buf = new char[1000];
+                    int block = 0;
+                    while (contentLength > 0) {
+                        try {
+                            if (!in.ready()) {
+                                break;
+                            }
+                            block = in.read(buf, 0, contentLength > 1000 ? 1000 : contentLength);
+                            str = new String(buf, 0, block);
+                            postRequest.append(str);
+                            contentLength -= block;
+                        } catch (final Exception e) {
+                            System.err.println("POST Exception :::: " + postRequest.toString());
+                            e.printStackTrace(System.err);
+                        }
+                    }
+                    final String postParams = postRequest.toString();
+                    System.out.println("POST :::: " + postParams);
+                    if (!postParams.startsWith("{") && !postParams.startsWith("[")) {// crude test for JSON posting - how can i do it better?
+                        final String[] params = postParams.split("&");
+                        for (final String pair : params) {
+                            final String[] paramSplit = pair.split("=");
+                            req.getParams().put(paramSplit[0].toLowerCase(), URLDecoder.decode(paramSplit[1]));
+                        }
+                    } else {
+                        req.setPostData(postParams);
+                    }
+                }
+            } else {
+                // next ttest for boundary : "boundary=----WebKitFormBoundaryFgZcxCfWUB2BdVQl"
+                // ignoring for now
+
+            }
+        }
+
+        private void processGetParams(final RequestData req) {
+            if (req.getPath().indexOf("?") > -1) {
+                final String queryString = req.getPath().substring(req.getPath().indexOf("?") + 1);
+                //Log.e("TCP","command : queryString="+queryString);
+                final String[] params = queryString.split("&");
+                ////Log.e("TCP","params="+params.length);
+
+                for (final String pair : params) {
+                    ////Log.e("TCP","pair="+pair);
+                    final String[] paramSplit = pair.split("=");
+                    if (paramSplit.length > 1) {
+                        req.getParams().put(paramSplit[0], URLDecoder.decode(paramSplit[1]));
+                    }
+                }
+            }
+        }
+
+        private void processHeaders(final BufferedReader in, final RequestData req) throws IOException {
+            String str;
+            boolean headersProcessed = false;
+            while (!headersProcessed) {
+                str = in.readLine();
+                //Log.d(Globals.TAG, "S: Request: '" + str + "'");
+                if (str != null && str.indexOf("GET ") != -1) {
+                    req.setMethod("GET");
+                    req.setPath(str.substring("GET ".length(), str.length() - " HTTP/1.1".length()));
+                } else if (str != null && str.indexOf("POST ") != -1) {
+                    req.setMethod("POST");
+                    req.setPath(str.substring("POST ".length(), str.length() - " HTTP/1.1".length()));
+                    //post=true;
+                } else if (str != null && str.indexOf("HEAD ") != -1) {
+                    req.setMethod("HEAD");
+                    req.setPath(str.substring("HEAD ".length(), str.length() - " HTTP/1.1".length()));
+                } else if (str != null) {
+                    final String[] header = str.split(":");
+                    if (header.length == 2) {
+                        if (header[0].trim().toLowerCase().equals("cookie")) {
+                            final HashMap<String, String> cookie = new HashMap<>();
+                            final String[] cookieDataSplit = header[1].split(";");
+                            for (final String cookieData : cookieDataSplit) {
+                                final String[] valSplit = cookieData.split(":");
+                                if (valSplit.length > 1) {
+                                    cookie.put(valSplit[0], valSplit[1]);
+                                }
+                            }
+                        } else {
+                            req.getHeaders().put(header[0].trim().toLowerCase(), header[1].trim());
+                            //DebugLog.log(DebugLog.wsLog,TCPServer.class.getCanonicalName() ,"S: Received Header: '" + header[0].trim().toLowerCase()+" = "+header[1].trim() + "'");
+                        }
+                    }
+                }
+                if ("".equals(str) || str == null) {
+                    headersProcessed = true;
+                }
+                //System.out.println("Header - '" + str + "'");
+            }
         }
 
         @Override
@@ -363,7 +340,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
                 requestThreads.remove(this);
                 client.close();
             } catch (final Exception e) {
-                System.err.println( "TCP:Exception closing client");
+                System.err.println("TCP:Exception closing client");
                 e.printStackTrace(System.err);
             }
         }
@@ -380,48 +357,63 @@ public class WebServer extends Thread implements InterruptibleChannel {
                 currentCommand.cancel = true;
             }
         }
+
+
+
+
     }
 
-    private int writOutInputStream(final OutputStream out, final InputStream sr) throws IOException {
-        final byte[] ch = new byte[1000];
-        int read = 0;
-        int pos = 0;
-        while (read > -1) {
-            out.write(ch, 0, read);
-            read = sr.read(ch, 0, 1000);
-            pos += read;
+    private void writeHeaders(final BufferedWriter out, final String mimeType, final int cacheSec) throws IOException {
+        final StringWriter sw = new StringWriter();
+        sw.write("HTTP/1.1 200 OK" + "\r\n");
+        sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");
+        sw.write("Server: " + config.getName() + "\r\n");
+        sw.write("Last-Modified: " + sdf.format(new Date()) + " GMT\r\n");
+        sw.write("Keep-Alive: timeout=15, max=100" + "\r\n");
+        sw.write("Connection: Keep-Alive" + "\r\n");
+        sw.write("Content-Type:" + mimeType + "\r\n");
+        if (cacheSec == -1) {
+            sw.write("Expires: -1" + "\r\n");
+            sw.write("Cache-Control: private, max-age=0" + "\r\n");
+        } else {
+            sw.write("Expires: " + sdf.format(new Date(System.currentTimeMillis() - cacheSec * 1000)) + " GMT\r\n");
+            sw.write("Cache-Control: private, max-age=" + cacheSec + "\r\n");
         }
-        sr.close();
-        return pos;
+        sw.write("\r\n");
+
+        out.write(sw.toString());
+        //Log.d(Globals.TAG,sw.toString());
+        out.flush();
     }
 
-    public int writeFile(final File assetPath, final OutputStream out) {
-        try {
-            final FileInputStream sr = new FileInputStream(assetPath);
-            return writOutInputStream(out, sr);
-        } catch (final IOException e) {
-            System.err.println( "TCP:file:" + assetPath + ":" + e.getMessage());
-            e.printStackTrace(System.err);
-        }
-        return -1;
+    public void sendForward(final OutputStream out, final String path) throws IOException {
+        final SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss");//"Tue, 16 Feb 2010 22:01:40 GMT"
+        final StringWriter sw = new StringWriter();
+        sw.write("HTTP/1.1 302 Found" + "\r\n");
+        sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");
+        sw.write("Server: " + config.getName() + "\r\n");
+        sw.write("Location: " + path + "\r\n");
+        sw.write("Content-Type:" + MimeMap.get(path).mimeType + "\r\n");
+        sw.write("\r\n");
+        out.write(sw.toString().getBytes());
+        out.flush();
     }
 
-    private boolean checkParent(final File templateFolder, final File f) {
-        final boolean res = false;
-        File test = f;
-        while (test.getParentFile() != null) {
-            if (test.getParentFile().equals(templateFolder)) {
-                return true;
-            } else {
-                test = test.getParentFile();
-            }
-        }
-        return false;
+    private void write404(final BufferedWriter outWriter, final String path)  throws IOException{
+        final StringWriter sw = new StringWriter();
+        sw.write("HTTP/1.1 404 Not Found" + "\r\n");
+        sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");
+        sw.write("Server: " + config.getName() + "\r\n");
+        sw.write("\r\n");
+
+        outWriter.write(sw.toString());
     }
+
+
 
 	
 	/* ************* https code  *************************************
-	 * make a key store using : keytool -genkey -alias alias -keypass simulator -keystore lig.keystore -storepass simulator
+     * make a key store using : keytool -genkey -alias alias -keypass simulator -keystore lig.keystore -storepass simulator
 	 * 
 	 * http://stackoverflow.com/questions/2308479/simple-java-https-server
 	 * 

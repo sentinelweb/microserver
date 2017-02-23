@@ -15,4 +15,5 @@ public class C {
     public static final String MULTICAST_IP_DEF = "224.0.0.1";
 
     public static final String STREAM_BASE = "/tmp";
+    public static final String DEFAULT_NAME = "Microserver Java";
 }
