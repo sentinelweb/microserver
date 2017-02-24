@@ -54,8 +54,11 @@ public class WebServerUtil {
                 final Enumeration<InetAddress> a = e.getInetAddresses();
                 for (; a.hasMoreElements(); ) {
                     final InetAddress addr = a.nextElement();
-                    System.out.println("  " + addr.getHostAddress());
-                    addresses.add(addr.getHostAddress());
+                    final String hostAddress = addr.getHostAddress();
+                    if (hostAddress.indexOf(".")>-1) {
+                        System.out.println("  " + hostAddress);
+                        addresses.add(hostAddress);
+                    }
                 }
             }
 

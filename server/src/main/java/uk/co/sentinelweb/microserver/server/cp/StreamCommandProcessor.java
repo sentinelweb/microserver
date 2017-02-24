@@ -16,20 +16,13 @@ import uk.co.sentinelweb.microserver.server.MimeMap;
 import uk.co.sentinelweb.microserver.server.RequestData;
 
 public class StreamCommandProcessor extends CommandProcessor {
-    public static String command = "stream";
     private boolean close = false;
     static ArrayList<StreamCommandProcessor> activeRequests = new ArrayList<>();
-
 
     public StreamCommandProcessor() {
         super();
         handleHeaders = true;
         singleton = false;
-    }
-
-    @Override
-    public String getCommand() {
-        return command;
     }
 
     @Override

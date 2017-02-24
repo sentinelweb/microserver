@@ -178,7 +178,9 @@ public class WebServer extends Thread implements InterruptibleChannel {
                         } else if (config.getWebRoot() != null) {
                             final File f = new File(config.getWebRoot(), req.getPath());
                             if (_fileUtils.checkParent(config.getWebRoot(), f) && f.exists()) {
-                                writeHeaders(outWriter, MimeMap.getExt(req.getPath()), config.getCacheTimeSecs());
+                                final MimeMap.MimeData mimeData = MimeMap.get(req.getPath());
+                                final String mimeType = mimeData != null ? mimeData.mimeType : MimeMap.MIME_APPLICATION_OCTET_STREAM;
+                                writeHeaders(outWriter, mimeType, config.getCacheTimeSecs());
                                 outWriter.flush();
                                 _fileUtils.writeFile(f, outputStream);
                             } else {
@@ -357,10 +359,6 @@ public class WebServer extends Thread implements InterruptibleChannel {
                 currentCommand.cancel = true;
             }
         }
-
-
-
-
     }
 
     private void writeHeaders(final BufferedWriter out, final String mimeType, final int cacheSec) throws IOException {
@@ -399,7 +397,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
         out.flush();
     }
 
-    private void write404(final BufferedWriter outWriter, final String path)  throws IOException{
+    private void write404(final BufferedWriter outWriter, final String path) throws IOException {
         final StringWriter sw = new StringWriter();
         sw.write("HTTP/1.1 404 Not Found" + "\r\n");
         sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");

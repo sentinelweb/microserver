@@ -71,8 +71,6 @@ public abstract class CommandProcessor {
 
     public abstract void release();
 
-    public abstract String getCommand();
-
     protected OutputStream getOutputStream() {
         return outputStream;
     }

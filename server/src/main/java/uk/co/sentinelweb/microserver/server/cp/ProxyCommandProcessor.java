@@ -17,7 +17,6 @@ import uk.co.sentinelweb.microserver.server.RequestData;
  * A Proxy to another URL (e.g. on another domain)
  */
 public class ProxyCommandProcessor extends CommandProcessor {
-	public static String command = "proxy";
 	private static final int CONN_TIMEOUT = 10;//sec
 	
 	public ProxyCommandProcessor() {
@@ -26,11 +25,7 @@ public class ProxyCommandProcessor extends CommandProcessor {
 		// TODO Auto-generated constructor stub
 	}
 
-	@Override
-	public String getCommand() {
-		return command;
-	}
-	
+
 	@Override
 	public String processCommand(final RequestData req) {
 		final HashMap<String, String> params = req.getParams();
@@ -83,9 +78,9 @@ public class ProxyCommandProcessor extends CommandProcessor {
 		out.write(sw.toString());
 		out.flush();
 	}
+
 	@Override
 	public void release() {
-		// TODO Auto-generated method stub
 
 	}
 	

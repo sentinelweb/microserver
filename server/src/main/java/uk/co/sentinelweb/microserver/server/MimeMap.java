@@ -44,6 +44,7 @@ public class MimeMap {
     public static final String MIME_APPLICATION_PDF = "application/pdf";
     public static final String MIME_APPLICATION_X_PDF = "application/x-pdf";
     public static final String MIME_TEXT_HTML = "text/html";
+    public static final String MIME_APPLICATION_OCTET_STREAM = "application/octet-stream";
 
     public static final String EXT_MP3 = "mp3";
     public static final String EXT_AVI = "avi";
