@@ -7,4 +7,7 @@ package uk.co.sentinelweb.microservice;
 public class C {
     public static final String ACTION_START = "start";
     public static final String ACTION_STOP = "stop";
+
+    public static final String WIFI_LOCK_TAG = "uk.co.sentinelweb.microservice.WIFILOCK";
+
 }
