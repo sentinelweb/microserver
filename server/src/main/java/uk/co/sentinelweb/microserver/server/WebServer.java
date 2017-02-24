@@ -37,7 +37,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
     SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss");
     public ArrayList<RequestProcessor> requestThreads = new ArrayList<>();
 
-    boolean serverRunning = false;
+    private boolean serverRunning = false;
 
     final WebServerConfig config;
 
@@ -76,12 +76,16 @@ public class WebServer extends Thread implements InterruptibleChannel {
         serverRunning = false;
     }
 
+    public boolean isServerRunning() {
+        return serverRunning;
+    }
+
     /*
-     * (non-Javadoc)
-     * @see java.nio.channels.InterruptibleChannel#close()
-     */
+         * (non-Javadoc)
+         * @see java.nio.channels.InterruptibleChannel#close()
+         */
     @Override
-    public void close() throws IOException {
+    public void close()  {
         for (final RequestProcessor rp : requestThreads) {
             try {
                 rp.cancel();
@@ -96,9 +100,17 @@ public class WebServer extends Thread implements InterruptibleChannel {
         }
 
         for (final CommandProcessor cp : config.getCommandProcessorMap().values()) {
-            cp.release();
+            try {
+                cp.release();
+            } catch (final Exception e) {
+                e.printStackTrace();
+            }
         }
-        serverSocket.close();
+        try {
+            serverSocket.close();
+        } catch (final IOException e) {
+            e.printStackTrace();
+        }
         doRun = false;
     }
 
@@ -210,16 +222,62 @@ public class WebServer extends Thread implements InterruptibleChannel {
             requestThreads.remove(this);
         }
 
-        private CommandProcessor getCommandProcessor(final RequestData req) {
-            int maxSize = -1;
-            CommandProcessor found = null;
-            for (final String commandPath : config.getCommandProcessorMap().keySet()) {
-                if (req.getPath().startsWith(commandPath) && commandPath.length() > maxSize) {
-                    maxSize = commandPath.length();
-                    found = config.getCommandProcessorMap().get(commandPath);
+        private void processHeaders(final BufferedReader in, final RequestData req) throws IOException {
+            String str;
+            boolean headersProcessed = false;
+            while (!headersProcessed) {
+                str = in.readLine();
+                //Log.d(Globals.TAG, "S: Request: '" + str + "'");
+                if (str != null && str.indexOf("GET ") != -1) {
+                    req.setMethod("GET");
+                    req.setPath(str.substring("GET ".length(), str.length() - " HTTP/1.1".length()));
+                } else if (str != null && str.indexOf("POST ") != -1) {
+                    req.setMethod("POST");
+                    req.setPath(str.substring("POST ".length(), str.length() - " HTTP/1.1".length()));
+                    //post=true;
+                } else if (str != null && str.indexOf("HEAD ") != -1) {
+                    req.setMethod("HEAD");
+                    req.setPath(str.substring("HEAD ".length(), str.length() - " HTTP/1.1".length()));
+                } else if (str != null) {
+                    final String[] header = str.split(":");
+                    if (header.length == 2) {
+                        if (header[0].trim().toLowerCase().equals("cookie")) {
+                            final HashMap<String, String> cookie = new HashMap<>();
+                            final String[] cookieDataSplit = header[1].split(";");
+                            for (final String cookieData : cookieDataSplit) {
+                                final String[] valSplit = cookieData.split(":");
+                                if (valSplit.length > 1) {
+                                    cookie.put(valSplit[0], valSplit[1]);
+                                }
+                            }
+                        } else {
+                            req.getHeaders().put(header[0].trim().toLowerCase(), header[1].trim());
+                            //DebugLog.log(DebugLog.wsLog,TCPServer.class.getCanonicalName() ,"S: Received Header: '" + header[0].trim().toLowerCase()+" = "+header[1].trim() + "'");
+                        }
+                    }
+                }
+                if ("".equals(str) || str == null) {
+                    headersProcessed = true;
+                }
+                //System.out.println("Header - '" + str + "'");
+            }
+        }
+
+        private void processGetParams(final RequestData req) {
+            if (req.getPath().indexOf("?") > -1) {
+                final String queryString = req.getPath().substring(req.getPath().indexOf("?") + 1);
+                //Log.e("TCP","command : queryString="+queryString);
+                final String[] params = queryString.split("&");
+                ////Log.e("TCP","params="+params.length);
+
+                for (final String pair : params) {
+                    ////Log.e("TCP","pair="+pair);
+                    final String[] paramSplit = pair.split("=");
+                    if (paramSplit.length > 1) {
+                        req.getParams().put(paramSplit[0], URLDecoder.decode(paramSplit[1]));
+                    }
                 }
             }
-            return found;
         }
 
         private void processPostParameters(final BufferedReader in, final RequestData req) {
@@ -278,62 +336,16 @@ public class WebServer extends Thread implements InterruptibleChannel {
             }
         }
 
-        private void processGetParams(final RequestData req) {
-            if (req.getPath().indexOf("?") > -1) {
-                final String queryString = req.getPath().substring(req.getPath().indexOf("?") + 1);
-                //Log.e("TCP","command : queryString="+queryString);
-                final String[] params = queryString.split("&");
-                ////Log.e("TCP","params="+params.length);
-
-                for (final String pair : params) {
-                    ////Log.e("TCP","pair="+pair);
-                    final String[] paramSplit = pair.split("=");
-                    if (paramSplit.length > 1) {
-                        req.getParams().put(paramSplit[0], URLDecoder.decode(paramSplit[1]));
-                    }
+        private CommandProcessor getCommandProcessor(final RequestData req) {
+            int maxSize = -1;
+            CommandProcessor found = null;
+            for (final String commandPath : config.getCommandProcessorMap().keySet()) {
+                if (req.getPath().startsWith(commandPath) && commandPath.length() > maxSize) {
+                    maxSize = commandPath.length();
+                    found = config.getCommandProcessorMap().get(commandPath);
                 }
             }
-        }
-
-        private void processHeaders(final BufferedReader in, final RequestData req) throws IOException {
-            String str;
-            boolean headersProcessed = false;
-            while (!headersProcessed) {
-                str = in.readLine();
-                //Log.d(Globals.TAG, "S: Request: '" + str + "'");
-                if (str != null && str.indexOf("GET ") != -1) {
-                    req.setMethod("GET");
-                    req.setPath(str.substring("GET ".length(), str.length() - " HTTP/1.1".length()));
-                } else if (str != null && str.indexOf("POST ") != -1) {
-                    req.setMethod("POST");
-                    req.setPath(str.substring("POST ".length(), str.length() - " HTTP/1.1".length()));
-                    //post=true;
-                } else if (str != null && str.indexOf("HEAD ") != -1) {
-                    req.setMethod("HEAD");
-                    req.setPath(str.substring("HEAD ".length(), str.length() - " HTTP/1.1".length()));
-                } else if (str != null) {
-                    final String[] header = str.split(":");
-                    if (header.length == 2) {
-                        if (header[0].trim().toLowerCase().equals("cookie")) {
-                            final HashMap<String, String> cookie = new HashMap<>();
-                            final String[] cookieDataSplit = header[1].split(";");
-                            for (final String cookieData : cookieDataSplit) {
-                                final String[] valSplit = cookieData.split(":");
-                                if (valSplit.length > 1) {
-                                    cookie.put(valSplit[0], valSplit[1]);
-                                }
-                            }
-                        } else {
-                            req.getHeaders().put(header[0].trim().toLowerCase(), header[1].trim());
-                            //DebugLog.log(DebugLog.wsLog,TCPServer.class.getCanonicalName() ,"S: Received Header: '" + header[0].trim().toLowerCase()+" = "+header[1].trim() + "'");
-                        }
-                    }
-                }
-                if ("".equals(str) || str == null) {
-                    headersProcessed = true;
-                }
-                //System.out.println("Header - '" + str + "'");
-            }
+            return found;
         }
 
         @Override
@@ -384,7 +396,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
         out.flush();
     }
 
-    public void sendForward(final OutputStream out, final String path) throws IOException {
+    private void sendForward(final OutputStream out, final String path) throws IOException {
         final SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss");//"Tue, 16 Feb 2010 22:01:40 GMT"
         final StringWriter sw = new StringWriter();
         sw.write("HTTP/1.1 302 Found" + "\r\n");

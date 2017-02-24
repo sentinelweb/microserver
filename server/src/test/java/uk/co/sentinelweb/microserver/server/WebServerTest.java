@@ -192,29 +192,25 @@ public class WebServerTest {
         server = new WebServer(config);
         server.start();
 
-        while (!server.serverRunning) {
-            try {
-                Thread.sleep(50);
-            } catch (final Exception e) {
-            }
+        while (!server.isServerRunning()) {
+            sleep(20);
         }
     }
 
     private void killServer() {
-        try {
-            server.close();
-            //new URL("http://127.0.0.1:" + C.SERVERPORT_DEF).openConnection().getInputStream().close();
-            while (server.serverRunning) {
-                try {
-                    Thread.sleep(50);
-                } catch (final Exception e) {
-                }
-            }
-        } catch (final IOException e) {
-            e.printStackTrace();
+        server.close();
+        while (server.isServerRunning()) {
+            sleep(20);
         }
+
     }
 
+    private void sleep(final int sleepTime) {
+        try {
+            Thread.sleep(sleepTime);
+        } catch (final Exception e) {
+        }
+    }
 
 
 }
