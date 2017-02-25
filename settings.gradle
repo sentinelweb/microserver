@@ -1,1 +1,1 @@
-include  ':example', ':server', ':service'
+include  ':example', ':microserver-java', ':microserver-android'
