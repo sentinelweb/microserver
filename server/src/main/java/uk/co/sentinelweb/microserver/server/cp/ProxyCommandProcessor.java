@@ -11,6 +11,7 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.util.HashMap;
 
+import uk.co.sentinelweb.microserver.server.HTTP;
 import uk.co.sentinelweb.microserver.server.RequestData;
 
 /**
@@ -19,9 +20,9 @@ import uk.co.sentinelweb.microserver.server.RequestData;
 public class ProxyCommandProcessor extends CommandProcessor {
 	private static final int CONN_TIMEOUT = 10;//sec
 	
-	public ProxyCommandProcessor() {
-		super();
-		handleHeaders = true;
+	public ProxyCommandProcessor(final String path) {
+		super(path);
+		_handleHeaders = true;
 		// TODO Auto-generated constructor stub
 	}
 
@@ -39,13 +40,13 @@ public class ProxyCommandProcessor extends CommandProcessor {
 				final InputStream is = huc.getInputStream();
 				String type = params.get("type");
 				if (type==null) type="text/xml; charset=utf-8";
-				writeHeaders(new OutputStreamWriter(getOutputStream()), type, huc.getContentLength());
+				writeHeaders(new OutputStreamWriter(req.getOutputStream()), type, huc.getContentLength());
 				final byte[] b=new byte[1000];
 				int pos =0; 
 				int bytesRead=0;
 				
 				while ((bytesRead = is.read(b,0,1000))>-1 && !cancel) {
-					getOutputStream().write(b,0,bytesRead);
+                    req.getOutputStream().write(b,0,bytesRead);
 					pos+=bytesRead;
 				}
 				is.close();
@@ -62,17 +63,16 @@ public class ProxyCommandProcessor extends CommandProcessor {
 	private void writeHeaders(final Writer out, final String type, final long contlen) throws IOException {
 		final StringWriter sw = new StringWriter();
 		
-		sw.write("HTTP/1.1 200 OK"+"\r\n");
-		sw.write("Date: Tue, 16 Feb 2010 22:01:40 GMT"+"\r\n");
-		sw.write("Server: Apache/2.2.12 (Ubuntu)"+"\r\n");
-		sw.write("Last-Modified: Tue, 16 Feb 2010 21:57:52 GMT"+"\r\n");
-		//sw.write("ETag: \"2030b-156c049-47fbed346f801\""+System.currentTimeMillis()+"\r\n");
-		sw.write("Accept-Ranges: bytes"+"\r\n");
-		sw.write("Content-Length: "+contlen+"\r\n");
-		sw.write("Keep-Alive: timeout=15, max=100"+"\r\n");
-		sw.write("Connection: Keep-Alive"+"\r\n");
-		sw.write("Content-Type:"+type+"\r\n");
-		sw.write("\r\n");
+		sw.write("HTTP/1.1 200 OK"+ HTTP.NEWLINE);
+		sw.write("Date: Tue, 16 Feb 2010 22:01:40 GMT"+HTTP.NEWLINE);
+		sw.write("Server: Apache/2.2.12 (Ubuntu)"+HTTP.NEWLINE);
+		sw.write("Last-Modified: Tue, 16 Feb 2010 21:57:52 GMT"+HTTP.NEWLINE);
+		sw.write("Accept-Ranges: bytes"+HTTP.NEWLINE);
+		sw.write("Content-Length: "+contlen+HTTP.NEWLINE);
+		sw.write("Keep-Alive: timeout=15, max=100"+HTTP.NEWLINE);
+		sw.write("Connection: Keep-Alive"+HTTP.NEWLINE);
+		sw.write("Content-Type:"+type+HTTP.NEWLINE);
+		sw.write(HTTP.NEWLINE);
 		
 
 		out.write(sw.toString());

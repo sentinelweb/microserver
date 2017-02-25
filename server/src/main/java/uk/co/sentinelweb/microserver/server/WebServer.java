@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.io.StringWriter;
 import java.lang.reflect.Constructor;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -18,38 +17,41 @@ import java.net.SocketException;
 import java.net.URLDecoder;
 import java.nio.channels.InterruptibleChannel;
 import java.nio.charset.Charset;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 
 import uk.co.sentinelweb.microserver.server.cp.CommandProcessor;
 import uk.co.sentinelweb.microserver.server.util.FileUtils;
+import uk.co.sentinelweb.microserver.server.util.HeaderUtils;
 
 /**
  * see not at bottom for tip on how to use https
  *
  * @author robert
  */
-public class WebServer extends Thread implements InterruptibleChannel {
+public class WebServer extends Thread implements InterruptibleChannel, IServer {
     ServerSocket serverSocket;
     public boolean doRun = true;
     final int port;
-    SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss");
     public ArrayList<RequestProcessor> requestThreads = new ArrayList<>();
 
     private boolean serverRunning = false;
 
-    final WebServerConfig config;
+    final WebServerConfig _config;
 
     FileUtils _fileUtils = new FileUtils();
+    HeaderUtils _headerUtils;
 
     public WebServer(final WebServerConfig config) {
         super();
-        this.config = config;
+        this._config = config;
+        _headerUtils = new HeaderUtils(_config);
         setName(config.getName());
         this.port = config.getPort();
         setPriority(config.getPriority());
+        for (final CommandProcessor cp : _config.getCommandProcessorMap()) {
+            cp.setServer(this);
+        }
     }
 
     public void run() {
@@ -58,7 +60,6 @@ public class WebServer extends Thread implements InterruptibleChannel {
             serverSocket = new ServerSocket(this.port);
             while (doRun) {
                 serverRunning = true;
-                System.out.println("TCPServer: running:" + serverSocket.getInetAddress().toString() + ":" + serverSocket.getLocalPort() + ":" + serverSocket.getLocalSocketAddress().toString());
                 final Socket client = serverSocket.accept();
                 try {
                     final RequestProcessor rp = new RequestProcessor(client);
@@ -85,7 +86,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
          * @see java.nio.channels.InterruptibleChannel#close()
          */
     @Override
-    public void close()  {
+    public void close() {
         for (final RequestProcessor rp : requestThreads) {
             try {
                 rp.cancel();
@@ -99,7 +100,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
             }
         }
 
-        for (final CommandProcessor cp : config.getCommandProcessorMap().values()) {
+        for (final CommandProcessor cp : _config.getCommandProcessorMap()) {
             try {
                 cp.release();
             } catch (final Exception e) {
@@ -117,6 +118,15 @@ public class WebServer extends Thread implements InterruptibleChannel {
     @Override
     public boolean isOpen() {
         return !serverSocket.isClosed();
+    }
+
+    public HeaderUtils getHeaderUtils() {
+        return _headerUtils;
+    }
+
+    @Override
+    public WebServerConfig getConfig() {
+        return _config;
     }
 
     public class RequestProcessor extends Thread implements InterruptibleChannel {
@@ -141,38 +151,46 @@ public class WebServer extends Thread implements InterruptibleChannel {
                 outputStream = client.getOutputStream();
                 outWriter = new BufferedWriter(new OutputStreamWriter(outputStream), 8 * 1024);// may not be used
                 //Parsing headers, path method string
-                final RequestData req = new RequestData();
+                final RequestData requestData = new RequestData();
                 final SocketAddress addr = client.getRemoteSocketAddress();
 
-                processHeaders(in, req);
+                processHeaders(in, requestData);
 
-                System.out.println(new StringBuffer("S: path: '").append(req.getPath()).append("'").toString());
-                if (req.getBasePath() != null && !"".equals(req.getBasePath())) {
+                System.out.println(new StringBuffer("S: path: '").append(requestData.getPath()).append("'").toString());
+                final String forwardUrl;
+                if ((forwardUrl = checkRedirect(requestData)) != null) {
+                    getHeaderUtils().sendForward(outputStream, forwardUrl);
+                    outputStream.flush();
+                } else if (requestData.getBasePath() != null && !"".equals(requestData.getBasePath())) {
                     try {
-//                        if (req.getPath().toLowerCase().endsWith("favicon.ico")) {
-//                            req.setPath(C.FAVICON);
+                        checkForward(requestData);// will replace path & basePath
+//                        if (requestData.getPath().toLowerCase().endsWith("favicon.ico")) {
+//                            requestData.setPath(C.FAVICON);
 //                        }
                         // parsing GET garameters
-                        processGetParams(req);
+                        processGetParams(requestData);
                         // parsing POST parameters
-                        processPostParameters(in, req);
+                        processPostParameters(in, requestData);
                         final String outputType = "text/html; charset=utf-8";
-                        CommandProcessor c = getCommandProcessor(req);
+                        CommandProcessor c = getCommandProcessor(requestData);
                         if (c != null) {
                             if (!c.singleton) {
                                 final Constructor<CommandProcessor> cons = (Constructor<CommandProcessor>) c.getClass().getConstructor();
                                 c = cons.newInstance();
+                                c.setServer(WebServer.this);
                             }
                             currentCommand = c;
-                            c.setInputStream(new ReaderInputStream(in, Charset.defaultCharset()));
-                            c.setOutputStream(outputStream);
-                            c.setRequest(this);
+                            requestData.setInputStream(new ReaderInputStream(in, Charset.defaultCharset()));
+                            requestData.setOutputStream(outputStream);
+                            requestData.setOutputWriter(outWriter);
+                            c.setRequestProcessor(this);
+
 
                             try {
-                                if (!c.handleHeaders) {
-                                    writeHeaders(outWriter, outputType, -1);
+                                if (!c._handleHeaders) {
+                                    _headerUtils.writeHeaders(outWriter, outputType, -1);
                                 }
-                                final String processCommand = c.processCommand(req);
+                                final String processCommand = c.processCommand(requestData);
                                 if (processCommand != null) {
                                     outWriter.write(processCommand);
                                 } else {
@@ -187,27 +205,28 @@ public class WebServer extends Thread implements InterruptibleChannel {
                                 c.release();
                             }
                             currentCommand = null;
-                        } else if (config.getWebRoot() != null) {
-                            final File f = new File(config.getWebRoot(), req.getPath());
-                            if (_fileUtils.checkParent(config.getWebRoot(), f) && f.exists()) {
-                                final MimeMap.MimeData mimeData = MimeMap.get(req.getPath());
+                        } else if (_config.getWebRoot() != null) {
+                            final File f = new File(_config.getWebRoot(), requestData.getPath());
+                            if (_fileUtils.checkParent(_config.getWebRoot(), f) && f.exists()) {
+                                final MimeMap.MimeData mimeData = MimeMap.get(requestData.getPath());
                                 final String mimeType = mimeData != null ? mimeData.mimeType : MimeMap.MIME_APPLICATION_OCTET_STREAM;
-                                writeHeaders(outWriter, mimeType, config.getCacheTimeSecs());
+                                _headerUtils.writeHeaders(outWriter, mimeType, _config.getCacheTimeSecs());
                                 outWriter.flush();
                                 _fileUtils.writeFile(f, outputStream);
                             } else {
-                                write404(outWriter, req.getPath());
+                                _headerUtils.write404(outWriter, requestData.getPath());
                             }
                         } else {
+                            System.err.println("404:" + requestData.getPath());
                             outWriter.write("({\"error\":\"Command not found\"})");
                         }
 
                         outWriter.flush();
                     } catch (final Exception e) {
-                        System.err.println("S: Error:" + req.getPath());
+                        System.err.println("S: Error:" + requestData.getPath());
                         e.printStackTrace(System.err);
                     }
-                }/*  req.getPath()!=null  */
+                }
             } catch (final Exception e) {
                 System.err.println("S: Error: " + e.getMessage());
                 e.printStackTrace(System.err);
@@ -220,6 +239,28 @@ public class WebServer extends Thread implements InterruptibleChannel {
                 }
             }
             requestThreads.remove(this);
+        }
+
+        private String checkRedirect(final RequestData requestData) {
+            if (_config.getRedirects().size() > 0) {
+                for (final String src : _config.getRedirects().keySet()) {
+                    if (src.equals(requestData.getPath())) {
+                        return _config.getRedirects().get(src);
+                    }
+                }
+            }
+            return null;
+        }
+
+        private void checkForward(final RequestData requestData) {
+            if (_config.getForwards().size() > 0) {
+                for (final String src : _config.getForwards().keySet()) {
+                    if (src.equals(requestData.getPath())) {
+                        requestData.setPath(_config.getForwards().get(src));
+                        break;
+                    }
+                }
+            }
         }
 
         private void processHeaders(final BufferedReader in, final RequestData req) throws IOException {
@@ -339,10 +380,11 @@ public class WebServer extends Thread implements InterruptibleChannel {
         private CommandProcessor getCommandProcessor(final RequestData req) {
             int maxSize = -1;
             CommandProcessor found = null;
-            for (final String commandPath : config.getCommandProcessorMap().keySet()) {
+            for (final CommandProcessor command : _config.getCommandProcessorMap()) {
+                final String commandPath = command.getCommandPath();
                 if (req.getPath().startsWith(commandPath) && commandPath.length() > maxSize) {
                     maxSize = commandPath.length();
-                    found = config.getCommandProcessorMap().get(commandPath);
+                    found = command;
                 }
             }
             return found;
@@ -373,55 +415,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
         }
     }
 
-    private void writeHeaders(final BufferedWriter out, final String mimeType, final int cacheSec) throws IOException {
-        final StringWriter sw = new StringWriter();
-        sw.write("HTTP/1.1 200 OK" + "\r\n");
-        sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");
-        sw.write("Server: " + config.getName() + "\r\n");
-        sw.write("Last-Modified: " + sdf.format(new Date()) + " GMT\r\n");
-        sw.write("Keep-Alive: timeout=15, max=100" + "\r\n");
-        sw.write("Connection: Keep-Alive" + "\r\n");
-        sw.write("Content-Type:" + mimeType + "\r\n");
-        if (cacheSec == -1) {
-            sw.write("Expires: -1" + "\r\n");
-            sw.write("Cache-Control: private, max-age=0" + "\r\n");
-        } else {
-            sw.write("Expires: " + sdf.format(new Date(System.currentTimeMillis() - cacheSec * 1000)) + " GMT\r\n");
-            sw.write("Cache-Control: private, max-age=" + cacheSec + "\r\n");
-        }
-        sw.write("\r\n");
 
-        out.write(sw.toString());
-        //Log.d(Globals.TAG,sw.toString());
-        out.flush();
-    }
-
-    private void sendForward(final OutputStream out, final String path) throws IOException {
-        final SimpleDateFormat sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss");//"Tue, 16 Feb 2010 22:01:40 GMT"
-        final StringWriter sw = new StringWriter();
-        sw.write("HTTP/1.1 302 Found" + "\r\n");
-        sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");
-        sw.write("Server: " + config.getName() + "\r\n");
-        sw.write("Location: " + path + "\r\n");
-        sw.write("Content-Type:" + MimeMap.get(path).mimeType + "\r\n");
-        sw.write("\r\n");
-        out.write(sw.toString().getBytes());
-        out.flush();
-    }
-
-    private void write404(final BufferedWriter outWriter, final String path) throws IOException {
-        final StringWriter sw = new StringWriter();
-        sw.write("HTTP/1.1 404 Not Found" + "\r\n");
-        sw.write("Date: " + sdf.format(new Date()) + " GMT\r\n");
-        sw.write("Server: " + config.getName() + "\r\n");
-        sw.write("\r\n");
-
-        outWriter.write(sw.toString());
-    }
-
-
-
-	
 	/* ************* https code  *************************************
      * make a key store using : keytool -genkey -alias alias -keypass simulator -keystore lig.keystore -storepass simulator
 	 * 
@@ -430,7 +424,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
 	  try
         {
             // setup the socket address
-            InetSocketAddress address = new InetSocketAddress ( InetAddress.getLocalHost (), config.getHttpsPort () );
+            InetSocketAddress address = new InetSocketAddress ( InetAddress.getLocalHost (), _config.getHttpsPort () );
 
             // initialise the HTTPS server
             HttpsServer httpsServer = HttpsServer.create ( address, 0 );
@@ -485,7 +479,7 @@ public class WebServer extends Thread implements InterruptibleChannel {
         catch ( Exception exception )
         {
             log.exception ( exception );
-            log.error ( "Failed to create HTTPS server on port " + config.getHttpsPort () + " of localhost" );
+            log.error ( "Failed to create HTTPS server on port " + _config.getHttpsPort () + " of localhost" );
         }
 	 */
 } 

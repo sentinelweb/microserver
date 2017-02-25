@@ -2,6 +2,8 @@ package uk.co.sentinelweb.microserver.server;
 
 import java.io.File;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 
 import uk.co.sentinelweb.microserver.server.cp.CommandProcessor;
 
@@ -14,11 +16,13 @@ public class WebServerConfig {
     private int port = C.SERVERPORT_DEF;
     private File webRoot;
     private int priority = C.WEB_SVR_PRIORITY;
-    private final HashMap<String, CommandProcessor> commandProcessorMap = new HashMap<>();
+    private final List< CommandProcessor> commandProcessorMap = new LinkedList<>();
+    private final HashMap< String, String> forwards = new HashMap<>();
+    private final HashMap< String, String> redirects = new HashMap<>();
     private String name = C.DEFAULT_NAME;
-    private int _cacheTimeSecs;
+    private int _cacheTimeSecs = -1;
 
-    public HashMap<String, CommandProcessor> getCommandProcessorMap() {
+    public List< CommandProcessor> getCommandProcessorMap() {
         return commandProcessorMap;
     }
 
@@ -43,8 +47,12 @@ public class WebServerConfig {
         return _cacheTimeSecs;
     }
 
-    public void setCacheTimeSecs(final int cacheTimeSecs) {
-        _cacheTimeSecs = cacheTimeSecs;
+    public HashMap<String, String> getForwards() {
+        return forwards;
+    }
+
+    public HashMap<String, String> getRedirects() {
+        return redirects;
     }
 
     public static class Builder {
@@ -75,10 +83,21 @@ public class WebServerConfig {
             return this;
         }
 
-        public WebServerConfig.Builder addProcessor(final String path, final CommandProcessor cp ) {
-            c.commandProcessorMap.put(path, cp);
+        public WebServerConfig.Builder addProcessor(final CommandProcessor cp ) {
+            c.commandProcessorMap.add(cp);
             return this;
         }
+
+        public WebServerConfig.Builder addForward(final String src, final String tgt) {
+            c.forwards.put(src, tgt);
+            return this;
+        }
+
+        public WebServerConfig.Builder addRedirect(final String src, final String tgt) {
+            c.redirects.put(src, tgt);
+            return this;
+        }
+
 
         public WebServerConfig build() {
             return c;

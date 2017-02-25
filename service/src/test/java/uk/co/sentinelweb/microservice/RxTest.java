@@ -9,8 +9,6 @@ import rx.observables.ConnectableObservable;
 import rx.subjects.PublishSubject;
 import rx.subjects.ReplaySubject;
 
-import static org.junit.Assert.assertEquals;
-
 /**
  */
 public class RxTest {
@@ -93,10 +91,14 @@ public class RxTest {
         replaySubject.onNext(1);
         replaySubject.onNext(2);
         replaySubject.onNext(3);
-        replaySubject.subscribe((val) -> System.out.println("lot" + val));
+        final Subscription subscribe1 = replaySubject.subscribe((val) -> System.out.println("lot" + val));
         replaySubject.onNext(4);
         subscribe.unsubscribe();
         replaySubject.onNext(5);
+        subscribe1.unsubscribe();
         replaySubject.onNext(6);
+        replaySubject.onNext(7);
+        final Subscription subscribe2 = replaySubject.subscribe((val) -> System.out.println("hot" + val));
+        replaySubject.onNext(8);
     }
 }

@@ -1,13 +1,10 @@
 package uk.co.sentinelweb.microserver.example;
 
-import android.content.ComponentName;
-import android.content.ServiceConnection;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.Button;
-import android.widget.EditText;
+import android.widget.TextView;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -28,6 +25,8 @@ import uk.co.sentinelweb.microservice.MicroService;
 
 public class MainActivity extends AppCompatActivity {
     public static final String TAG = MainActivity.class.getSimpleName();
+    public static final String PING_URL = "http://localhost:4443/ping";
+    public static final String PAGE_URL = "http://localhost:4443/a/index.html";
 
     @Bind(R.id.start_button)
     Button startButton;
@@ -35,11 +34,15 @@ public class MainActivity extends AppCompatActivity {
     @Bind(R.id.ping_button)
     Button pingButton;
 
+    @Bind(R.id.webpage_button)
+    Button webpageButton;
+
     @Bind(R.id.ping_result)
-    EditText pingOutputText;
+    TextView pingOutputText;
 
     MicroService.Status _status;
     private Subscription _subscription;
+    private Subscription _pingSubscription;
     //private MSConnection _conn;
 
     @Override
@@ -51,21 +54,25 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onStart() {
-        super.onStart();
-        Log.d(TAG, "onStart");
-        _subscription = MicroService.statusPublishSubject.subscribe(_observer);
+    protected void onResume() {
+        super.onResume();
+        Log.d(TAG, "onResume");
+        _subscription=MicroService.statusPublishSubject.subscribe(_statusObserver);
         //bindService(MicroService.getBindIntent(this), _conn, 0);
     }
 
     @Override
-    protected void onStop() {
-        super.onStop();
+    protected void onPause() {
+        super.onPause();
         //unbindService(_conn);
-        Log.d(TAG, "onStop");
-        if (_subscription != null && !_subscription.isUnsubscribed()) {
-            _subscription.unsubscribe();
-            _subscription = null;
+        Log.d(TAG, "onPause");
+        unsub(_subscription);
+        unsub(_pingSubscription);
+    }
+
+    private void unsub(final Subscription subscription) {
+        if (subscription != null && !subscription.isUnsubscribed()) {
+            subscription.unsubscribe();
         }
     }
 
@@ -78,9 +85,14 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    @OnClick(R.id.webpage_button)
+    public void launchWebpage() {
+        startActivity(WebActivity.Companion.getIntent(this, PAGE_URL));
+    }
+
     @OnClick(R.id.ping_button)
     public void pingServer() {
-        Single.create(
+        final Single<String> pingSingle = Single.create(
                 new Single.OnSubscribe<String>() {
                     @Override
                     public void call(final SingleSubscriber<? super String> singleSubscriber) {
@@ -91,32 +103,15 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                 }
-
-
-        )
+        );
+        _pingSubscription = pingSingle
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribeOn(Schedulers.io())
-                .subscribe(new Observer<String>() {
-                    @Override
-                    public void onCompleted() {
-
-                    }
-
-                    @Override
-                    public void onError(final Throwable e) {
-                        Log.d(TAG, "Error pinging", e);
-                    }
-
-                    @Override
-                    public void onNext(final String s) {
-                        pingOutputText.setText(s);
-                    }
-                });
+                .subscribe(pingObserver);
     }
 
-
     private static String doPingServer() throws IOException {
-        final URL url = new URL("http://localhost:4443/ping");
+        final URL url = new URL(PING_URL);
         final HttpURLConnection con = (HttpURLConnection) url.openConnection();
 
         if (con.getResponseCode() != 200) {
@@ -127,7 +122,7 @@ public class MainActivity extends AppCompatActivity {
         return br.readLine();
     }
 
-    private final Observer<MicroService.Status> _observer = new Observer<MicroService.Status>() {
+    private final Observer<MicroService.Status> _statusObserver = new Observer<MicroService.Status>() {
         @Override
         public void onCompleted() {
 
@@ -144,25 +139,44 @@ public class MainActivity extends AppCompatActivity {
             if (status == MicroService.Status.STARTED) {
                 startButton.setText("Stop");
                 pingButton.setEnabled(true);
+                webpageButton.setEnabled(true);
             } else {
                 startButton.setText("Start");
                 pingButton.setEnabled(false);
+                webpageButton.setEnabled(false);
             }
         }
     };
 
-
-    private class MSConnection implements ServiceConnection {
+    private final Observer<String> pingObserver = new Observer<String>() {
         @Override
-        public void onServiceConnected(final ComponentName name, final IBinder service) {
-            _subscription = ((MicroService.MsBinder) service).getService().getStatusObserver()
-                    .subscribe(_observer);
+        public void onCompleted() {
+
         }
 
         @Override
-        public void onServiceDisconnected(final ComponentName name) {
-
+        public void onError(final Throwable e) {
+            Log.d(TAG, "Error pinging", e);
         }
-    }
+
+        @Override
+        public void onNext(final String s) {
+            pingOutputText.setText(s);
+        }
+    };
+
+
+//    private class MSConnection implements ServiceConnection {
+//        @Override
+//        public void onServiceConnected(final ComponentName name, final IBinder service) {
+//            _subscriptions = ((MicroService.MsBinder) service).getService().getStatusObserver()
+//                    .subscribe(_statusObserver);
+//        }
+//
+//        @Override
+//        public void onServiceDisconnected(final ComponentName name) {
+//
+//        }
+//    }
 
 }

@@ -29,6 +29,7 @@ public class MicroService extends Service {
     public static final ReplaySubject<Status> statusPublishSubject = ReplaySubject.createWithSize(1);
     static {
         statusPublishSubject.onNext(Status.STOPPED);
+        statusPublishSubject.doOnSubscribe(() -> Log.d(TAG, "ReplaySubject Subscribe"));
     }
 
     public static Intent getStartIntent(final Context c) {
@@ -36,10 +37,10 @@ public class MicroService extends Service {
         intent.setAction(C.ACTION_START);
         return intent;
     }
-    public static Intent getBindIntent(final Context c) {
-        final Intent intent = new Intent(c, MicroService.class);
-        return intent;
-    }
+//    public static Intent getBindIntent(final Context c) {
+//        final Intent intent = new Intent(c, MicroService.class);
+//        return intent;
+//    }
 
     public static Intent getStopIntent(final Context c) {
         final Intent intent = new Intent(c, MicroService.class);

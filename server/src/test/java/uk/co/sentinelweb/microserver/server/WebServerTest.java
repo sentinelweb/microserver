@@ -19,6 +19,7 @@ import java.net.URLConnection;
 import java.util.HashMap;
 import java.util.Set;
 
+import uk.co.sentinelweb.microserver.server.cp.CommandProcessor;
 import uk.co.sentinelweb.microserver.server.cp.PingCommandProcessor;
 
 import static org.junit.Assert.assertEquals;
@@ -31,18 +32,17 @@ import static org.junit.Assert.assertTrue;
 public class WebServerTest {
 
     public static final String WEB_BASE = "http://127.0.0.1:" + C.SERVERPORT_DEF;
+    public static final String PING_PATH = "/c/ping";
     WebServer server;
 
-    private final String PING_URL = WEB_BASE + "/c/ping";
+    private final String PING_URL = WEB_BASE + PING_PATH;
     public static final String FILE_CONTENT = "Some multi-line\n file content\nshould come back the same";
 
     @Test
     public void testPing() {
-        final PingCommandProcessor pingCommandProcessor = new PingCommandProcessor();
         final WebServerConfig config = new WebServerConfig.Builder()
-                .addProcessor("/c/ping", pingCommandProcessor)
+                .addProcessor( new PingCommandProcessor(PING_PATH))
                 .build();
-        pingCommandProcessor.setConfig(config);
         startServer(config);
 
         try {
@@ -174,6 +174,84 @@ public class WebServerTest {
             e.printStackTrace();
         } finally {
             killServer();
+        }
+    }
+
+    /**
+     * Test a redirect
+     */
+    @Test
+    public void testRedirect() {
+        final String testSrcPath = "/google";
+        final String testTargetUrl = "http://www.google.com";
+        final WebServerConfig config = new WebServerConfig.Builder()
+                .addRedirect(testSrcPath, testTargetUrl)
+                .build();
+        startServer(config);
+        try {
+            final URL url = new URL(WEB_BASE + testSrcPath);
+            final HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setInstanceFollowRedirects(false);
+            connection.connect();
+
+            final int code = connection.getResponseCode();
+            assertEquals(302, code);
+            assertEquals(testTargetUrl, connection.getHeaderField(HTTP.HEADER_LOCATION));
+        } catch (final MalformedURLException e) {
+            e.printStackTrace();
+        } catch (final IOException e) {
+            e.printStackTrace();
+        } finally {
+            killServer();
+        }
+    }
+
+    /**
+     * Test a forward
+     */
+    @Test
+    public void testForward() {
+        final String testSrcPath = "/test";
+        final String testForwardPath = "/forward";
+        final TargetCommandProcessor cp = new TargetCommandProcessor(testForwardPath);
+        final WebServerConfig config = new WebServerConfig.Builder()
+                .addForward(testSrcPath, testForwardPath)
+                .addProcessor(cp)
+                .build();
+        startServer(config);
+        try {
+            final URL url = new URL(WEB_BASE + testSrcPath);
+            final HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.connect();
+            final int code = connection.getResponseCode();
+            assertEquals(200, code);
+            assertTrue(cp.hit);
+        } catch (final MalformedURLException e) {
+            e.printStackTrace();
+        } catch (final IOException e) {
+            e.printStackTrace();
+        } finally {
+            killServer();
+        }
+    }
+
+    private class TargetCommandProcessor extends CommandProcessor {
+        boolean hit = false;
+        public TargetCommandProcessor(final String commandPath) {
+            super(commandPath);
+        }
+
+        @Override
+        public String processCommand(final RequestData req) {
+            hit = true;
+            return "";
+        }
+
+        @Override
+        public void release() {
+
         }
     }
 

@@ -3,25 +3,24 @@ package uk.co.sentinelweb.microserver.server.cp;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.Date;
 import java.util.HashMap;
 
+import uk.co.sentinelweb.microserver.server.IServer;
 import uk.co.sentinelweb.microserver.server.RequestData;
 import uk.co.sentinelweb.microserver.server.WebServer;
+import uk.co.sentinelweb.microserver.server.util.HeaderUtils;
 
 public abstract class CommandProcessor {
-    public static final String NEWLINE = "\r\n";
     //public static HashMap<Class,CommandProcessor> commands = new HashMap<>();
 
     private static final String EX_KEY_EXCEPTION = "exception";
     private static final String EX_KEY_TYPE = "type";
     private static final String EX_KEY_STACK = "stack";
     private static final String EX_KEY_MSG = "msg";
+    private final String _commandPath;
+
     //Context _cxt;
 
     //JSONData json = new JSONData();
@@ -51,92 +50,34 @@ public abstract class CommandProcessor {
 
     public static final String DATA = "data";
 
-    protected OutputStream outputStream;
-    protected InputStream inputStream;
-    public boolean handleHeaders = false;
+    public boolean _handleHeaders = false;
     public boolean singleton = true;
     public boolean cancel = false;
-    private WebServer.RequestProcessor _request;
+    private WebServer.RequestProcessor _requestProcessor;
     protected Gson gson;
+    protected IServer server;
 
-    public CommandProcessor() {
+    public CommandProcessor(final String commandPath) {
         super();
+        this._commandPath = commandPath;
         final GsonBuilder gsonb = new GsonBuilder();
         gson = gsonb.create();
-
     }
 
+    public void setServer(final IServer server) {
+        this.server = server;
+    }
 
     public abstract String processCommand(RequestData req);
 
     public abstract void release();
 
-    protected OutputStream getOutputStream() {
-        return outputStream;
+    public void setRequestProcessor(final WebServer.RequestProcessor req) {
+        _requestProcessor = req;
     }
 
-    public void setOutputStream(final OutputStream outputStream) {
-        this.outputStream = outputStream;
-    }
-
-    /**
-     * @return the inputStream
-     */
-    public InputStream getInputStream() {
-        return inputStream;
-    }
-
-    /**
-     * @param inputStream the inputStream to set
-     */
-    public void setInputStream(final InputStream inputStream) {
-        this.inputStream = inputStream;
-    }
-
-    public void setRequest(final WebServer.RequestProcessor req) {
-        _request = req;
-    }
-
-    public HashMap<String, String> getDefaultHeaders() {
-        final HashMap<String, String> headers = new HashMap<>();
-        headers.put("Date", new Date().toGMTString() + " GMT");
-        headers.put("Server", "MicroServer java");
-        headers.put("Last-Modified", new Date().toGMTString() + " GMT");
-        headers.put("Keep-Alive", "timeout=15, max=100");
-        headers.put("Connection", "Keep-Alive");
-        headers.put("Expires", "-1");
-        headers.put("Cache-Control", "private, max-age=0");
-        return headers;
-    }
-
-    public WebServer.RequestProcessor getRequest() {
-        return _request;
-    }
-
-    protected void writeHeaders(final OutputStream out, final String type) throws IOException {
-        final HashMap<String, String> headers = getDefaultHeaders();
-        headers.put("Content-Type", type);
-        writeHeaders(out, type, headers);
-    }
-
-    protected void writeHeaders(final OutputStream out, final String type, final HashMap<String, String> extras) throws IOException {
-        final HashMap<String, String> headers = getDefaultHeaders();
-        headers.put("Content-Type", type);
-        headers.putAll(extras);
-        writeHeaders(out, headers);
-    }
-
-    protected void writeHeaders(final OutputStream out, final HashMap<String, String> headers) throws IOException {
-        final StringWriter sw = new StringWriter();
-        sw.write("HTTP/1.1 200 OK" + NEWLINE);
-        for (final String name : headers.keySet()) {
-            sw.write(name + ": " + headers.get(name) + NEWLINE);
-        }
-        sw.write(NEWLINE);
-
-        out.write(sw.toString().getBytes());
-        //Log.d(Globals.TAG,sw.toString());
-        out.flush();
+    public WebServer.RequestProcessor getRequestProcessor() {
+        return _requestProcessor;
     }
 
     protected void setResultOK(final HashMap<String, Object> response) {
@@ -194,4 +135,13 @@ public abstract class CommandProcessor {
         result.put(EX_KEY_EXCEPTION, exMap);
         return gson.toJson(response);
     }
+
+    protected HeaderUtils getHeaderUtils(){
+        return server.getHeaderUtils();
+    }
+
+    public String getCommandPath() {
+        return _commandPath;
+    }
+
 }

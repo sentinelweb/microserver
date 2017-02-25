@@ -15,13 +15,18 @@ import uk.co.sentinelweb.microserver.server.C;
 import uk.co.sentinelweb.microserver.server.MimeMap;
 import uk.co.sentinelweb.microserver.server.RequestData;
 
+/**
+ * Streams via HTTP
+ *
+ */
 public class StreamCommandProcessor extends CommandProcessor {
     private boolean close = false;
     static ArrayList<StreamCommandProcessor> activeRequests = new ArrayList<>();
+    OutputStream outputStream;
 
-    public StreamCommandProcessor() {
-        super();
-        handleHeaders = true;
+    public StreamCommandProcessor(final String path) {
+        super(path);
+        _handleHeaders = true;
         singleton = false;
     }
 
@@ -39,12 +44,12 @@ public class StreamCommandProcessor extends CommandProcessor {
         final boolean dl = params.get("dl") != null;
 
         final File file = new File(C.STREAM_BASE + path);
+        outputStream = req.getOutputStream();
         if (file == null || !file.exists()) {// not found
             final ArrayList<String> extraHeaders = new ArrayList<>();
-            final OutputStream out = getOutputStream();
             extraHeaders.add("HTTP/1.1 " + 404 + " file not found" + "\r\n");
             try {
-                writeHeaders(out, extraHeaders);
+                writeHeaders(outputStream, extraHeaders);
             } catch (final IOException e) {
                 e.printStackTrace();
             }
@@ -52,7 +57,7 @@ public class StreamCommandProcessor extends CommandProcessor {
         } else {//process
             final MimeMap.MimeData mimeRec = MimeMap.get(file.getName());
             try {
-                getRequest().setName("SCP:" + path);
+                //req.getRequestProcessor().setName("SCP:" + path);
                 System.out.println("StreamCP:>>>>>>>>>>>>>>new request >>>>>>>>>>>" + this.hashCode() + "(active:" + activeRequests.size() + ")" + " first:" + activeRequests.get(0).hashCode());
 
                 System.out.println("StreamCP:method:" + req.getMethod());
@@ -75,7 +80,6 @@ public class StreamCommandProcessor extends CommandProcessor {
                     extraHeaders.add("Connection: close" + "\r\n");
                 }
                 long contlen = file.length();
-                final OutputStream out = getOutputStream();
                 String type = mimeRec.mimeType;
                 if (req.isHead()) {
                     extraHeaders.add("Date: Thu, 18 Feb 2010 17:01:17 GMT\r\n");
@@ -88,7 +92,7 @@ public class StreamCommandProcessor extends CommandProcessor {
                     } else {
                         extraHeaders.add("Content-Type:" + type + "\r\n");
                     }
-                    writeHeaders(out, extraHeaders);
+                    writeHeaders(outputStream, extraHeaders);
                 } else {
                     long start = 0;
                     long end = file.length();
@@ -154,9 +158,9 @@ public class StreamCommandProcessor extends CommandProcessor {
                             extraHeaders.add("Content-Range:bytes " + start + "-" + end + "/" + (file.length()) + "\r\n");
                         }
                     }
-                    writeHeaders(out, extraHeaders);
+                    writeHeaders(outputStream, extraHeaders);
                     // set thread name for testing
-                    getRequest().setName("SCP:" + file.getName() + ":" + status);
+                    //getRequestProcessor().setName("SCP:" + file.getName() + ":" + status);
 
                     // write stream
                     final long openTime = System.currentTimeMillis();
@@ -180,10 +184,10 @@ public class StreamCommandProcessor extends CommandProcessor {
                             if (end - pos < bytesRead) {//WTF does this do? seems to stop writing out past end of file
                                 bytesToWrite = (int) (end - pos + 1);
                             }
-                            out.write(b, 0, bytesToWrite);
+                            outputStream.write(b, 0, bytesToWrite);
                             pos += bytesToWrite;
                             written += bytesToWrite;
-                            getOutputStream().flush();
+                            outputStream.flush();
                             if (pos > end) {
                                 break;
                             }
@@ -217,7 +221,6 @@ public class StreamCommandProcessor extends CommandProcessor {
             sw.write(extr);
             System.out.println("StreamCP:outheader:" + extr);
         }
-
         sw.write("\r\n");
         sw.flush();
         out.write(sw.toString().getBytes());
@@ -234,7 +237,7 @@ public class StreamCommandProcessor extends CommandProcessor {
     public void cancel() {
         try {
             outputStream.close();
-            getRequest().close();
+            getRequestProcessor().close();
             System.out.println("StreamCP: closed:" + this.hashCode() + "(" + activeRequests.size() + ")");
         } catch (final IOException e) {
             System.err.println("StreamCP: cancel:" + this.hashCode() + "(" + activeRequests.size() + ")" + e.getMessage());
