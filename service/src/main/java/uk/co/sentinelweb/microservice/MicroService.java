@@ -9,7 +9,6 @@ import android.os.IBinder;
 import android.support.annotation.NonNull;
 import android.util.Log;
 
-import rx.Observable;
 import rx.Single;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.schedulers.Schedulers;
@@ -28,8 +27,7 @@ public class MicroService extends Service {
 
     public static final ReplaySubject<Status> statusPublishSubject = ReplaySubject.createWithSize(1);
     static {
-        statusPublishSubject.onNext(Status.STOPPED);
-        statusPublishSubject.doOnSubscribe(() -> Log.d(TAG, "ReplaySubject Subscribe"));
+        statusPublishSubject.onNext(Status.STOPPED);// initialise subject state
     }
 
     public static Intent getStartIntent(final Context c) {
@@ -37,10 +35,11 @@ public class MicroService extends Service {
         intent.setAction(C.ACTION_START);
         return intent;
     }
-//    public static Intent getBindIntent(final Context c) {
-//        final Intent intent = new Intent(c, MicroService.class);
-//        return intent;
-//    }
+
+    public static Intent getBindIntent(final Context c) {
+        final Intent intent = new Intent(c, MicroService.class);
+        return intent;
+    }
 
     public static Intent getStopIntent(final Context c) {
         final Intent intent = new Intent(c, MicroService.class);
@@ -57,7 +56,6 @@ public class MicroService extends Service {
 
     @Override
     public IBinder onBind(final Intent intent) {
-        Log.d(TAG, "Service bind");
         return new MsBinder();
 
     }
@@ -75,9 +73,7 @@ public class MicroService extends Service {
 
     @Override
     public int onStartCommand(final Intent intent, final int flags, final int startId) {
-        Log.d(TAG, "Service startcommand");
         if (intent!=null) {
-            Log.d(TAG, "Service startcommand acton:"+intent.getAction());
             if (C.ACTION_START.equals(intent.getAction())) {
                 startServer();
             } else if (C.ACTION_STOP.equals(intent.getAction())) {
@@ -152,10 +148,6 @@ public class MicroService extends Service {
     @Override
     public boolean onUnbind(final Intent intent) {
         return super.onUnbind(intent);
-    }
-
-    public Observable<Status> getStatusObserver() {
-        return statusPublishSubject;
     }
 
     public class MsBinder extends Binder {

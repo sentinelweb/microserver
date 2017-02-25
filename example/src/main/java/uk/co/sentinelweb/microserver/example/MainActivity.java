@@ -43,14 +43,12 @@ public class MainActivity extends AppCompatActivity {
     MicroService.Status _status;
     private Subscription _subscription;
     private Subscription _pingSubscription;
-    //private MSConnection _conn;
 
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
-        //_conn = new MSConnection();
     }
 
     @Override
@@ -58,16 +56,15 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         Log.d(TAG, "onResume");
         _subscription=MicroService.statusPublishSubject.subscribe(_statusObserver);
-        //bindService(MicroService.getBindIntent(this), _conn, 0);
     }
 
     @Override
     protected void onPause() {
-        super.onPause();
-        //unbindService(_conn);
         Log.d(TAG, "onPause");
         unsub(_subscription);
         unsub(_pingSubscription);
+        super.onPause();
+
     }
 
     private void unsub(final Subscription subscription) {
@@ -164,19 +161,5 @@ public class MainActivity extends AppCompatActivity {
             pingOutputText.setText(s);
         }
     };
-
-
-//    private class MSConnection implements ServiceConnection {
-//        @Override
-//        public void onServiceConnected(final ComponentName name, final IBinder service) {
-//            _subscriptions = ((MicroService.MsBinder) service).getService().getStatusObserver()
-//                    .subscribe(_statusObserver);
-//        }
-//
-//        @Override
-//        public void onServiceDisconnected(final ComponentName name) {
-//
-//        }
-//    }
 
 }
