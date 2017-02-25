@@ -28,7 +28,7 @@ public class ConnectivityUtil {
      * Release wifi lock
      * @param wifiLock
      */
-    public void releaseWifiLock(final WifiManager.WifiLock wifiLock ){
+    public static void releaseWifiLock(final WifiManager.WifiLock wifiLock ){
         if (wifiLock != null && wifiLock.isHeld()) {
             wifiLock.release();
         }

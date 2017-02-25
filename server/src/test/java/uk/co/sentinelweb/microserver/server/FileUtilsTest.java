@@ -4,6 +4,8 @@ import org.junit.Test;
 
 import java.io.File;
 
+import uk.co.sentinelweb.microserver.server.util.FileUtils;
+
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 

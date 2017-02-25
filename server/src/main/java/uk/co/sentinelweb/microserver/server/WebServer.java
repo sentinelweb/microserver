@@ -24,6 +24,7 @@ import java.util.Date;
 import java.util.HashMap;
 
 import uk.co.sentinelweb.microserver.server.cp.CommandProcessor;
+import uk.co.sentinelweb.microserver.server.util.FileUtils;
 
 /**
  * see not at bottom for tip on how to use https
@@ -69,9 +70,8 @@ public class WebServer extends Thread implements InterruptibleChannel {
             }
             serverSocket.close();
         } catch (final Exception e) {
-            System.err.println("S: Error" + e.getLocalizedMessage());
+            System.err.println("S: Error: " + e.getLocalizedMessage());
             e.printStackTrace(System.err);
-            System.err.println("Could not start server:" + e.getMessage());
         }
         serverRunning = false;
     }

@@ -1,4 +1,4 @@
-package uk.co.sentinelweb.microserver.server;
+package uk.co.sentinelweb.microserver.server.util;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -35,7 +35,7 @@ public class FileUtils {
         return -1;
     }
 
-    boolean checkParent(final File templateFolder, final File f) {
+    public boolean checkParent(final File templateFolder, final File f) {
         final String[] pathSplit = f.getAbsolutePath().split("/");
         File realFile = new File("/");
         for (final String filePart: pathSplit) {
