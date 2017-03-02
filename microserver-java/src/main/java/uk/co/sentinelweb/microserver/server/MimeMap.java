@@ -110,6 +110,8 @@ public class MimeMap {
     public static final String EXT_CSS = "css";
     public static final String MIME_APPLICATION_JAVASCRIPT = "application/javascript";
     public static final String EXT_JS = "js";
+    public static final String EXT_MKV = "mkv";
+    public static final String MIME_VIDEO_X_MATROSKA = "video/x-matroska";
     public static final List<MimeData> mimeTypes = Arrays.asList(
             new MimeData(EXT_MP3, MIME_AUDIO_MPEG3, AUDIO, Supported.YES, Binary.YES),
             new MimeData(EXT_MP3, MIME_AUDIO_MP3, AUDIO, Supported.YES, Binary.YES),
@@ -132,6 +134,7 @@ public class MimeMap {
             new MimeData(EXT_OGA, MIME_AUDIO_OGG, AUDIO, Supported.YES, Binary.YES),
             new MimeData(EXT_OGG, MIME_APPLICATION_OGG, AUDIO_VIDEO, Supported.YES, Binary.YES),
             new MimeData(EXT_OGV, MIME_VIDEO_OGG, VIDEO, Supported.YES, Binary.YES),
+            new MimeData(EXT_MKV, MIME_VIDEO_X_MATROSKA, VIDEO, Supported.YES, Binary.YES),
             new MimeData(EXT_WAV, MIME_AUDIO_X_WAV, AUDIO, Supported.YES, Binary.YES),
             new MimeData(EXT_GIF, MIME_IMAGE_GIF, IMAGE, Supported.YES, Binary.YES),
             new MimeData(EXT_PNG, MIME_IMAGE_PNG, IMAGE, Supported.YES, Binary.YES),
